@@ -1,7 +1,9 @@
 "use client";
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSession } from "next-auth/react";
 import axios from "axios";
+import LoginModal from "./LoginModal";
 
 const API = "http://localhost:8000"; // your FastAPI backend
 
@@ -19,6 +21,8 @@ interface UploadedFile {
 }
 
 export default function Demo() {
+  const { data: session }             = useSession();
+  const [showLogin, setShowLogin]     = useState(false);
   const [file, setFile]               = useState<UploadedFile | null>(null);
   const [uploading, setUploading]     = useState(false);
   const [messages, setMessages]       = useState<Message[]>([]);
@@ -89,8 +93,23 @@ export default function Demo() {
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") sendQuestion();
   };
-
+if (!session) {
+      return (
+        <section id="demo" className="py-28 px-12 max-w-[1100px] mx-auto">
+          <p className="text-[11px] font-mono tracking-widest text-muted mb-4 uppercase">// live demo</p>
+          <h2 className="font-display font-bold text-white tracking-tighter mb-4" style={{ fontSize: "clamp(32px, 4vw, 52px)", letterSpacing: "-0.03em" }}>Ask your document anything</h2>
+          <p className="text-[16px] text-muted max-w-md leading-relaxed mb-16">Upload a PDF and watch Clairo extract precise answers — sign in to get started.</p>
+          <div className="bg-surface border border-border rounded-2xl p-16 flex flex-col items-center justify-center gap-6 text-center">
+            <div className="w-16 h-16 rounded-2xl border border-border2 bg-card flex items-center justify-center text-3xl">✦</div>
+            <div><h3 className="font-display font-bold text-white text-xl mb-2">Sign in to try Clairo</h3><p className="text-muted text-[14px]">Upload documents and query them with AI — free.</p></div>
+            <button onClick={() => setShowLogin(true)} className="px-8 py-3.5 bg-white text-black font-semibold text-[14px] rounded-xl hover:opacity-85 transition-opacity font-display">Sign in to continue</button>
+          </div>
+          <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} />
+        </section>
+      );
+    }
   return (
+    
     <section id="demo" className="py-28 px-12 max-w-[1100px] mx-auto">
       {/* header */}
       <p className="text-[11px] font-mono tracking-widest text-muted mb-4 uppercase">// live demo</p>
