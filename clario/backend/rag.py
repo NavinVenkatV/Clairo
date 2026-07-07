@@ -1,82 +1,106 @@
 import os
 from dotenv import load_dotenv
-from langchain_community.document_loaders import PyMuPDFLoader # -> reads the pdf
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings #used for converting chunks to vector
-from langchain_community.vectorstores import Chroma
-from langchain_openai import ChatOpenAI
-from langchain.chains import RetrievalQA
+
+import chromadb
+
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_chroma import Chroma
+from langchain_classic.chains import RetrievalQA
 
 load_dotenv()
 
-# on main.py file we got a pdf passed to rag (query_document)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 
-#load and chunking the pdf - 
-def load_pdf(filePath : str):
-    loader  = PyMuPDFLoader(filePath)
+COLLECTION_NAME = "documents"
+
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-small"
+)
+
+
+def load_pdf(file_path: str):
+    loader = PyMuPDFLoader(file_path)
     documents = loader.load()
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size = 500,
-        chunk_overlap = 50
-    )
-    chunks = splitter.split_documents(documents)
-    return chunks;
 
-#we have chunks -- we need to store it in chromaDB
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50,
+    )
+
+    return splitter.split_documents(documents)
+
 
 def index_document(chunks):
-    embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small"
+    """
+    Replace the previous uploaded document completely.
+    """
+
+    client = chromadb.PersistentClient(path=CHROMA_DIR)
+
+    try:
+        client.delete_collection(COLLECTION_NAME)
+    except Exception:
+        pass
+
+    vectorstore = Chroma(
+        client=client,
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
     )
-    vectorstore = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        persist_directory="./chroma_db"  # saves locally
-    )
+
+    vectorstore.add_documents(chunks)
+
     return vectorstore
 
-def query_document(question : str):
-    embeddings = OpenAIEmbeddings(
-        model = "text-embedding-3-small"
-    )
+
+def query_document(question: str):
+    client = chromadb.PersistentClient(path=CHROMA_DIR)
+
     vectorstore = Chroma(
-    persist_directory = "./chroma_db",
-    embedding_function = embeddings 
+        client=client,
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
     )
+
     retriever = vectorstore.as_retriever(
-        search_kwargs = { "k" : 5}
+        search_kwargs={
+            "k": 5
+        }
     )
 
     llm = ChatOpenAI(
         model="gpt-4o-mini",
-        temperature=0  # no creativity, factual only
+        temperature=0,
     )
 
     chain = RetrievalQA.from_chain_type(
         llm=llm,
         retriever=retriever,
-        return_source_documents=True  # gives citations
+        return_source_documents=True,
     )
-    result = chain.invoke({"query": question})
-    
-    answer = result["result"]
-    sources = []
-    for doc in result["source_documents"]:
-        sources.append({
-            "page": doc.metadata.get("page", "unknown"),
-            "content": doc.page_content[:200]  # first 200 chars
-        })
-    
-    return {"answer": answer, "sources": sources}
 
-if __name__ == "__main__":
-    # test upload
-    chunks = load_pdf("test.pdf")
-    print(f"Total chunks: {len(chunks)}")
-    index_document(chunks)
-    print("Indexed!")
-    
-    # test query
-    result = query_document("what is this document about?")
-    print(result["answer"])
-    print(result["sources"])
+    result = chain.invoke(
+        {
+            "query": question
+        }
+    )
+
+    answer = result["result"]
+
+    sources = []
+
+    for doc in result["source_documents"]:
+        sources.append(
+            {
+                "page": doc.metadata.get("page", "unknown"),
+                "content": doc.page_content[:200],
+            }
+        )
+
+    return {
+        "answer": answer,
+        "sources": sources,
+    }

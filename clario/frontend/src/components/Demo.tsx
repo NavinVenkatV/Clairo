@@ -1,9 +1,16 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSession } from "next-auth/react";
 import axios from "axios";
 import LoginModal from "./LoginModal";
+
+const INDEXING_STAGES = [
+  "Reading PDF",
+  "Splitting into chunks",
+  "Generating embeddings",
+  "Storing in ChromaDB",
+];
 
 const API = "http://localhost:8000"; // your FastAPI backend
 
@@ -22,18 +29,34 @@ interface UploadedFile {
 
 export default function Demo() {
   const { data: session }             = useSession();
+  console.log("veru Impolortatnt : ", session?.user)
   const [showLogin, setShowLogin]     = useState(false);
   const [file, setFile]               = useState<UploadedFile | null>(null);
   const [uploading, setUploading]     = useState(false);
+  const [stageIndex, setStageIndex]   = useState(0);
   const [messages, setMessages]       = useState<Message[]>([]);
   const [question, setQuestion]       = useState("");
   const [loading, setLoading]         = useState(false);
+  const [thinkStage, setThinkStage]   = useState(0);
   const [error, setError]             = useState<string | null>(null);
   const inputRef                      = useRef<HTMLInputElement>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
 
+  // cycle through indexing stages purely for visual feedback while
+  // the real /upload request is in flight
+  useEffect(() => {
+    if (!uploading) return;
+    setStageIndex(0);
+    const id = setInterval(() => {
+      setStageIndex(prev => (prev < INDEXING_STAGES.length - 1 ? prev + 1 : prev));
+    }, 700);
+    return () => clearInterval(id);
+  }, [uploading]);
+
   // ── handle PDF upload ──
   const handleUpload = async (f: File) => {
+    console.log("xiovioiejvoieoinonxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxS")
+    console.log("Uploading:", f.name, new Date().toISOString());
     if (!f || f.type !== "application/pdf") {
       setError("Please upload a PDF file.");
       return;
@@ -63,6 +86,18 @@ export default function Demo() {
     const f = e.dataTransfer.files[0];
     if (f) handleUpload(f);
   };
+
+  const THINK_STAGES = ["Searching document", "Reading top matches", "Composing answer"];
+
+  useEffect(() => {
+    if (!loading) return;
+    setThinkStage(0);
+    const id = setInterval(() => {
+      setThinkStage(prev => (prev < THINK_STAGES.length - 1 ? prev + 1 : prev));
+    }, 900);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   // ── send question ──
   const sendQuestion = async () => {
@@ -174,9 +209,27 @@ if (!session) {
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
               />
               {uploading ? (
-                <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-col items-center gap-4 w-full max-w-[260px]">
                   <div className="w-6 h-6 border-2 border-muted border-t-white rounded-full animate-spin" />
-                  <span className="text-[13px] text-muted font-mono">Indexing document...</span>
+                  <div className="flex flex-col gap-2 w-full">
+                    {INDEXING_STAGES.map((stage, i) => (
+                      <div key={stage} className="flex items-center gap-2.5">
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 transition-colors duration-300 ${
+                            i < stageIndex ? "bg-white" : i === stageIndex ? "bg-white animate-pulse" : "bg-dim"
+                          }`}
+                        />
+                        <span
+                          className={`text-[12px] font-mono transition-colors duration-300 ${
+                            i <= stageIndex ? "text-off" : "text-dim"
+                          }`}
+                        >
+                          {stage}
+                          {i === stageIndex && <span className="animate-pulse">...</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <>
@@ -293,6 +346,18 @@ if (!session) {
                         style={{ animationDelay: `${i * 0.15}s` }} />
                     ))}
                   </div>
+                  <AnimatePresence mode="wait">
+                    <motion.span
+                      key={THINK_STAGES[thinkStage]}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.2 }}
+                      className="text-[11px] font-mono text-dim ml-1"
+                    >
+                      {THINK_STAGES[thinkStage]}...
+                    </motion.span>
+                  </AnimatePresence>
                 </motion.div>
               )}
             </div>
